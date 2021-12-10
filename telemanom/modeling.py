@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import logging
+
+import telemanom.ESN
 from telemanom.utility import create_lstm_model, create_esn_model, create_path
 import random
 import time
@@ -16,7 +18,7 @@ import time
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 logger = logging.getLogger('telemanom')
 
-def get_seed(folder, chan_id):
+def get_seed(config, chan_id):
     """
     Read previously saved seeds
     :param folder: folder for seeds file
@@ -24,25 +26,17 @@ def get_seed(folder, chan_id):
     :return: returns the seed saved for a given telemetry channel
     """
 
-
-    path = f'./data/{folder}/models/seeds.log'
+    path = create_path(config, 'models')+'seeds.log'
+    #path = f'./data/{folder}/models/seeds.log'
     file1 = open(path, 'r')
     seed = 0
-    while True:
-        line = file1.readline()
-        # if line is empty end of file is reached
-        if not line:
-            break
 
-        strings = line.strip().split(" ")
-        channel_id = strings[0]
-        seed = int(strings[1])
+    for row in file1.readlines():
+        if row.startswith(chan_id):
+            seed = int(row.strip().split(" ")[1])
+            return seed
 
-        if channel_id == chan_id:
-            break
-
-    file1.close()
-    return seed
+    #TODO raise seed file not found!
 
 
 class Model:
@@ -84,12 +78,11 @@ class Model:
 
                 if self.config.model_architecture != "LSTM":
                     # get seed for a specific model model
-                    seed = get_seed(self.config.use_id, self.chan_id)
-                    #TODO- recuperare il vero seed
+                    seed = get_seed(self.config, self.chan_id)
                     self.model = create_esn_model(channel, self.config, hp, seed)
-
-                    self.model.load_weights(os.path.join('data', self.config.use_id,
-                                                         'models', self.chan_id + '.h5'))
+                    path = create_path(self.config, 'models')+self.chan_id+'.h5'
+                    #TODO- ????
+                    self.model.load_weights(path)
 
                 else:
                     path = create_path(self.config, 'models')+self.chan_id + '.h5'
@@ -328,8 +321,10 @@ class LiteModel:
         self.chan_id = channel.id
         self.y_hat = np.array([])
         self.model = None
+        self.model_path = create_path(self.config, 'models', lib='TFLite')+self.chan_id+'.tflite'
         self.size = 0
         self.conversion_time = 0
+        self.prediction_time = 0
 
     def convert(self, tf_model):
         """
@@ -352,7 +347,103 @@ class LiteModel:
         print('Model converted in {}s'.format(self.conversion_time))
 
         # save TFLite model
-        path = create_path(self.config, 'models', lib='TFLite')+self.chan_id+'.tflite'
-        with open(path, 'wb') as f:
+        with open(self.model_path, 'wb') as f:
             f.write(self.model)
-        self.size = int(os.path.getsize(path) / 1024)
+        self.size = int(os.path.getsize(self.model_path) / 1024)
+
+    def aggregate_predictions(self, y_hat_batch, method='first'):
+        """
+        Aggregates predictions for each timestep. When predicting n steps
+        ahead where n > 1, will end up with multiple predictions for a
+        timestep.
+
+        Args:
+            y_hat_batch (arr): predictions shape (<batch length>, <n_preds)
+            method (string): indicates how to aggregate for a timestep - "first"
+                or "mean"
+        """
+        agg_y_hat_batch = np.array([])
+
+        for t in range(len(y_hat_batch)):
+
+            start_idx = t - self.config.n_predictions
+            start_idx = start_idx if start_idx >= 0 else 0
+
+            # predictions pertaining to a specific timestep lie along diagonal
+            y_hat_t = np.flipud(y_hat_batch[start_idx:t+1]).diagonal()
+
+            if method == 'first':
+                agg_y_hat_batch = np.append(agg_y_hat_batch, [y_hat_t[0]])
+            elif method == 'mean':
+                agg_y_hat_batch = np.append(agg_y_hat_batch, np.mean(y_hat_t))
+
+        agg_y_hat_batch = agg_y_hat_batch.reshape(len(agg_y_hat_batch), 1)
+        self.y_hat = np.append(self.y_hat, agg_y_hat_batch)
+
+    def batch_predict(self, channel):
+
+        """
+        Used trained lite model to predict test data arriving in batches.
+
+        Args:
+            channel (obj): Channel class object containing train/test data
+                for X,y for a single channel
+
+        Returns:
+            channel (obj): Channel class object with y_hat values as attribute
+        """
+
+        num_batches = int((channel.y_test.shape[0] - self.config.l_s)
+                          / self.config.batch_size)
+        if num_batches < 0:
+            raise ValueError('l_s ({}) too large for stream length {}.'
+                             .format(self.config.l_s, channel.y_test.shape[0]))
+
+        method = self.config.method
+
+        #load TFLite interpreter
+        interpreter = tf.lite.Interpreter(model_path=self.model_path)
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        # preprocessing input data
+        input_shape = input_details[0]['shape']  # [1, 1, 25]
+        output_shape = output_details[0]['shape']  # [1, 10]
+
+        start_time = time.time()
+
+        # simulate data arriving in batches, predict each batch
+        for i in range(0, num_batches + 1):
+            prior_idx = i * self.config.batch_size
+            idx = (i + 1) * self.config.batch_size
+
+            if i + 1 == num_batches + 1:
+                # remaining values won't necessarily equal batch size
+                idx = channel.y_test.shape[0]
+
+            # risetto la dimensione dell'input in modo da prendere un batch alla volta
+            interpreter.resize_tensor_input(input_details[0]['index'], [idx-prior_idx, channel.X_test.shape[1], 25])
+            interpreter.allocate_tensors()
+
+            X_test_batch = channel.X_test[prior_idx:idx]
+            X_test_batch = np.array(X_test_batch, dtype=np.float32)
+            interpreter.set_tensor(input_details[0]['index'], X_test_batch)
+            interpreter.invoke()
+
+            y_hat_batch = interpreter.get_tensor(output_details[0]['index'])
+            self.aggregate_predictions(y_hat_batch, method=method)
+
+        self.y_hat = np.reshape(self.y_hat, (self.y_hat.size,))
+        delta_time = time.time() - start_time
+        self.prediction_time = delta_time
+        print(self.prediction_time)
+        #channel.y_hat = self.y_hat
+        np.save(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy', self.y_hat)
+
+        return channel
+
+    def load_predictions(self):
+        """
+            load prediciton to compare it with tfLite model's prediction
+        """
+        self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
