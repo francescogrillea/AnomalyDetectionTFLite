@@ -1,4 +1,5 @@
 import yaml
+import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.callbacks import History, EarlyStopping
 import sys
@@ -7,8 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import logging
-from telemanom.utility import create_lstm_model, create_esn_model
+from telemanom.utility import create_lstm_model, create_esn_model, create_path
 import random
+import time
 
 # suppress tensorflow CPU speedup warnings
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -68,6 +70,7 @@ class Model:
         self.run_id = run_id
         self.y_hat = np.array([])
         self.model = None
+        self.size = 0
 
         if self.config.execution == "predict":
             try:
@@ -88,9 +91,11 @@ class Model:
                     self.model.load_weights(os.path.join('data', self.config.use_id,
                                                          'models', self.chan_id + '.h5'))
 
-
                 else:
-                    self.model = load_model(os.path.join('data', self.config.use_id, 'models', self.chan_id + '.h5'))
+                    path = create_path(self.config, 'models')+self.chan_id + '.h5'
+                    self.size = int(os.path.getsize(path) / 1024)
+                    self.model = load_model(path)
+
             except (FileNotFoundError, OSError) as e:
                 path = os.path.join('data', self.config.use_id, 'models',
                                     self.chan_id + '.h5')
@@ -291,3 +296,63 @@ class Model:
         #                     .format(self.chan_id)), self.y_hat)
 
         return channel
+
+    def load_predictions(self):
+        """
+            load prediciton to compare it with tfLite model's prediction
+        """
+        self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
+
+
+class LiteModel:
+
+    def __init__(self, config, channel):
+        """
+            Convert/Loads RNN in TensorFlowLite and predicts future telemetry values for a channel.
+
+            Args:
+                config (obj): Config object containing parameters for processing
+                    and model training
+                channel (obj): Channel class object containing train/test data for X,y for a single channel
+
+            Attributes:
+                config (obj): see Args
+                chan_id (str): channel id
+                y_hat (arr): predicted channel values
+                model (obj): trained RNN model for predicting channel values using TensorFlow Lite
+                size (int): model size (in KB)
+                conversion_time (float): time elapled during conversion from TensorFlow to TensorFlow Lite
+        """
+
+        self.config = config
+        self.chan_id = channel.id
+        self.y_hat = np.array([])
+        self.model = None
+        self.size = 0
+        self.conversion_time = 0
+
+    def convert(self, tf_model):
+        """
+            Convert TensorFlow model in TensorFlowLite model
+
+            Args:
+                tf_model (obj): Model class object containing TensorFlow trained model
+        """
+
+        start_time = time.time()
+        converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+        converter.target_spec.supported_ops = [
+            tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+            tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+        ]
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        self.model = converter.convert()
+        delta_time = time.time() - start_time
+        self.conversion_time = delta_time
+        print('Model converted in {}s'.format(self.conversion_time))
+
+        # save TFLite model
+        path = create_path(self.config, 'models', lib='TFLite')+self.chan_id+'.tflite'
+        with open(path, 'wb') as f:
+            f.write(self.model)
+        self.size = int(os.path.getsize(path) / 1024)

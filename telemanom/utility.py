@@ -77,4 +77,13 @@ def create_esn_model(channel,config, hp, seed):
     return model
 
 
+def create_path(config, obj, lib='TF'):
+    # lib = TF, TFLite respectly for TensorFlow and TensorFlow Lite folder
+    # obj = model, y_hat, smoothed_errors
 
+    folder = config.model_architecture + '_' + str(config.n_layers) + 'L'
+    if config.model_architecture == 'ESN':
+        if config.serialization == True:
+            folder = folder + '_SER'
+    path = 'data/' + lib + '/' + folder + '/' + obj + '/'
+    return path
