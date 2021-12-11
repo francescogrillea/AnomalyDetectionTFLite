@@ -1,5 +1,6 @@
 import numpy as np
-
+import time
+import tensorflow as tf
 from telemanom import helpers
 from telemanom.utility import create_path
 from telemanom.channel import Channel
@@ -11,6 +12,7 @@ class DetectorLite:
         self.config = helpers.Config(config_path)
         self.labels_path = labels_path
         self.channel = None
+        self.mode = 'convert_predict'
 
         #custom configuration values
         self.channel_name = 'A-1'
@@ -19,30 +21,44 @@ class DetectorLite:
         print(self.config.model_architecture, self.config.n_layers)
 
 
+    def compare_predictions(self):
+        y_TF = np.load(create_path(self.config, 'y_hat')+self.channel_name+'.npy')
+        y_TFLite = np.load(create_path(self.config, 'y_hat', lib='TFLite')+self.channel_name+'.npy')
+
+        print(y_TF.shape, y_TFLite.shape)
+        max, sum, i = (0,0,0)
+
+        for a,b in zip(y_TF, y_TFLite):
+            val = abs(a-b)
+            sum += val
+            i += 1
+            if val > max:
+                max = val
+
+        print('Max: {}'.format(max))
+        print('Avg: {}'.format(sum/i))
+
     def run(self):
 
         #create channel and load dataset
         self.channel = Channel(self.config, self.channel_name)
         self.channel.load_data()
-        #X_TEST.shape (8380, 250, 25)
-
-        #TODO - if self.config.execution == 'convert' or self.config.execution == 'convert_and_predict':
-        #load model
-        tf_model = Model(self.config, self.channel_name, self.channel)
-            #inputshape = (None, None, 25)
-            #outputshape = (None, 10)
-        #tf_model.load_predictions()
-
 
         #create TFLite Model
         tfLite_model = LiteModel(self.config, self.channel)
 
-        #convert model to TensorFlow Lite
-        tfLite_model.convert(tf_model.model)
-        print('From {}Kb to {}Kb'.format(tf_model.size, tfLite_model.size))
+        if self.mode.startswith('convert'):
+            #load TF model
+            tf_model = Model(self.config, self.channel_name, self.channel)
+            #print(tf_model.model.summary())
+            #tf_model.load_predictions()
 
-        #predict using TFLite Model
-        tfLite_model.batch_predict(self.channel)
-        print(tfLite_model.y_hat.shape)
+            #convert model to TF Lite
+            tfLite_model.convert(tf_model.model)
 
-        #TODO - if self.config.execution == 'predict' or self.config.execution == 'convert_and_predict':
+            print('Model converted')
+
+        if self.mode.endswith('predict'):
+            # predict using TFLite Model
+            tfLite_model.batch_predict(self.channel)
+            print(tfLite_model.y_hat.shape)

@@ -81,8 +81,10 @@ class Model:
                     seed = get_seed(self.config, self.chan_id)
                     self.model = create_esn_model(channel, self.config, hp, seed)
                     path = create_path(self.config, 'models')+self.chan_id+'.h5'
-                    #TODO- ????
                     self.model.load_weights(path)
+                    #FATTO IO
+                    t = tf.constant(channel.X_test)
+                    self.model(t)
 
                 else:
                     path = create_path(self.config, 'models')+self.chan_id + '.h5'
@@ -292,7 +294,7 @@ class Model:
 
     def load_predictions(self):
         """
-            load prediciton to compare it with tfLite model's prediction
+            load predicitons made by TFLite model
         """
         self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
 
@@ -326,7 +328,7 @@ class LiteModel:
         self.conversion_time = 0
         self.prediction_time = 0
 
-    def convert(self, tf_model):
+    def convert(self, tf_model, save=True):
         """
             Convert TensorFlow model in TensorFlowLite model
 
@@ -347,9 +349,10 @@ class LiteModel:
         print('Model converted in {}s'.format(self.conversion_time))
 
         # save TFLite model
-        with open(self.model_path, 'wb') as f:
-            f.write(self.model)
-        self.size = int(os.path.getsize(self.model_path) / 1024)
+        if save:
+            with open(self.model_path, 'wb') as f:
+                f.write(self.model)
+            self.size = int(os.path.getsize(self.model_path) / 1024)
 
     def aggregate_predictions(self, y_hat_batch, method='first'):
         """
@@ -380,7 +383,7 @@ class LiteModel:
         agg_y_hat_batch = agg_y_hat_batch.reshape(len(agg_y_hat_batch), 1)
         self.y_hat = np.append(self.y_hat, agg_y_hat_batch)
 
-    def batch_predict(self, channel):
+    def batch_predict(self, channel, save=True):
 
         """
         Used trained lite model to predict test data arriving in batches.
@@ -391,6 +394,7 @@ class LiteModel:
 
         Returns:
             channel (obj): Channel class object with y_hat values as attribute
+            :param save: save predictions
         """
 
         num_batches = int((channel.y_test.shape[0] - self.config.l_s)
@@ -411,6 +415,7 @@ class LiteModel:
         output_shape = output_details[0]['shape']  # [1, 10]
 
         start_time = time.time()
+        rtt = time.time()
 
         # simulate data arriving in batches, predict each batch
         for i in range(0, num_batches + 1):
@@ -422,7 +427,7 @@ class LiteModel:
                 idx = channel.y_test.shape[0]
 
             # risetto la dimensione dell'input in modo da prendere un batch alla volta
-            interpreter.resize_tensor_input(input_details[0]['index'], [idx-prior_idx, channel.X_test.shape[1], 25])
+            interpreter.resize_tensor_input(input_details[0]['index'], [idx-prior_idx, channel.X_test.shape[1], channel.X_test.shape[2]])
             interpreter.allocate_tensors()
 
             X_test_batch = channel.X_test[prior_idx:idx]
@@ -432,18 +437,21 @@ class LiteModel:
 
             y_hat_batch = interpreter.get_tensor(output_details[0]['index'])
             self.aggregate_predictions(y_hat_batch, method=method)
+            print(time.time()-rtt)
+            rtt = time.time()
 
         self.y_hat = np.reshape(self.y_hat, (self.y_hat.size,))
         delta_time = time.time() - start_time
         self.prediction_time = delta_time
         print(self.prediction_time)
-        #channel.y_hat = self.y_hat
-        np.save(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy', self.y_hat)
+        #channel.y_hat = self.y_hat\
+        if save:
+            np.save(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy', self.y_hat)
 
         return channel
 
     def load_predictions(self):
         """
-            load prediciton to compare it with tfLite model's prediction
+            load predicitons made by TFLite model
         """
         self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
