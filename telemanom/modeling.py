@@ -292,11 +292,6 @@ class Model:
 
         return channel
 
-    def load_predictions(self):
-        """
-            load predicitons made by TFLite model
-        """
-        self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
 
 
 class LiteModel:
@@ -444,7 +439,7 @@ class LiteModel:
         delta_time = time.time() - start_time
         self.prediction_time = delta_time
         print(self.prediction_time)
-        #channel.y_hat = self.y_hat\
+        #channel.y_hat = self.y_hat
         if save:
             np.save(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy', self.y_hat)
 
@@ -454,4 +449,4 @@ class LiteModel:
         """
             load predicitons made by TFLite model
         """
-        self.y_hat = np.load(create_path(self.config, 'y_hat')+self.chan_id+'.npy')
+        self.y_hat = np.load(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy')

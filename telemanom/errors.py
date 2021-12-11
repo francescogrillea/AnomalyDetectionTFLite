@@ -63,9 +63,8 @@ class Errors:
             self.e_s[:self.config.l_s] = \
                 [np.mean(self.e_s[:self.config.l_s * 2])] * self.config.l_s
 
-        np.save(os.path.join('data', run_id, 'smoothed_errors', '{}.npy'
-                             .format(channel.id)),
-                np.array(self.e_s))
+        #TODO- ricordare che l'ho commentata
+        #np.save(os.path.join('data', run_id, 'smoothed_errors', '{}.npy'.format(channel.id)),np.array(self.e_s))
 
         self.normalized = np.mean(self.e / np.ptp(channel.y_test))
         if self.config.execution != "search_p":
@@ -416,7 +415,11 @@ class ErrorWindow:
         i_to_remove[::-1].sort()
 
         if len(i_to_remove) > 0:
-            E_seq = np.delete(E_seq, i_to_remove, axis=0)
+            #FATTO IO
+            myArr = []
+            [myArr.append(int(z)) for z in i_to_remove[:]]
+            E_seq = np.delete(E_seq, myArr, axis=0)
+            #E_seq = np.delete(E_seq, i_to_remove, axis=0)
 
         if len(E_seq) == 0 and inverse:
             self.i_anom_inv = np.array([])
