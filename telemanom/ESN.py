@@ -228,6 +228,7 @@ class SimpleESN(keras.Model):
         self.readout.add(tf.keras.layers.Dense(config.n_predictions))
         self.readout.compile(loss=config.loss_metric, optimizer=config.optimizer)
 
+
     def call(self, inputs):
         r = self.reservoir(inputs)
         y = self.readout(r)

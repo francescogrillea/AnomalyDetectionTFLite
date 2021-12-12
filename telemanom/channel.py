@@ -58,8 +58,6 @@ class Channel:
         for i in range(len(arr) - self.config.l_s - self.config.n_predictions):
             data.append(arr[i:i + self.config.l_s + self.config.n_predictions])
         data = np.array(data)
-        if not train:
-            print('data {}'.format(data.shape))
 
         assert len(data.shape) == 3
 
@@ -70,10 +68,6 @@ class Channel:
         else:
             self.X_test = data[:, :-self.config.n_predictions, :]
             self.y_test = data[:, -self.config.n_predictions:, 0]  # telemetry value is at position 0
-
-            print('x_test {}'.format(self.X_test.shape))
-            print('y_test {}'.format(self.y_test.shape))
-
 
 
         # we create train and validation set

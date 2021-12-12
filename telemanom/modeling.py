@@ -82,14 +82,18 @@ class Model:
                     self.model = create_esn_model(channel, self.config, hp, seed)
                     path = create_path(self.config, 'models')+self.chan_id+'.h5'
                     self.model.load_weights(path)
+
+                    self.model._set_inputs(channel.X_test[:config.batch_size]) #TODO è giusto?
+
                     #FATTO IO
-                    t = tf.constant(channel.X_test)
-                    self.model(t)
+                    #t = tf.constant(channel.X_test)
+                    #self.model(t)
 
                 else:
                     path = create_path(self.config, 'models')+self.chan_id + '.h5'
-                    self.size = int(os.path.getsize(path) / 1024)
                     self.model = load_model(path)
+                #TODO calculate size
+                self.size = sys.getsizeof(self.model)
 
             except (FileNotFoundError, OSError) as e:
                 path = os.path.join('data', self.config.use_id, 'models',
@@ -268,6 +272,8 @@ class Model:
             raise ValueError('l_s ({}) too large for stream length {}.'
                              .format(self.config.l_s, channel.y_test.shape[0]))
 
+        start_time = time.time()
+        rtt = time.time()
         method = self.config.method
         # simulate data arriving in batches, predict each batch
         for i in range(0, num_batches + 1):
@@ -281,8 +287,13 @@ class Model:
             X_test_batch = channel.X_test[prior_idx:idx]
             y_hat_batch = self.model.predict(X_test_batch)
             self.aggregate_predictions(y_hat_batch, method=method)
+            delta_time = time.time()-rtt
+            print(delta_time)
+            rtt = time.time()
 
 
+        delta_time = time.time() - start_time
+        print(delta_time)
         self.y_hat = np.reshape(self.y_hat, (self.y_hat.size,))
 
         channel.y_hat = self.y_hat
@@ -298,7 +309,7 @@ class LiteModel:
 
     def __init__(self, config, channel):
         """
-            Convert/Loads RNN in TensorFlowLite and predicts future telemetry values for a channel.
+            Convert/Loads TensorFlowLite models and predicts future telemetry values for a channel.
 
             Args:
                 config (obj): Config object containing parameters for processing
@@ -342,12 +353,13 @@ class LiteModel:
         delta_time = time.time() - start_time
         self.conversion_time = delta_time
         print('Model converted in {}s'.format(self.conversion_time))
+        # TODO calculate size
+        self.size = sys.getsizeof(self.model)
 
         # save TFLite model
         if save:
             with open(self.model_path, 'wb') as f:
                 f.write(self.model)
-            self.size = int(os.path.getsize(self.model_path) / 1024)
 
     def aggregate_predictions(self, y_hat_batch, method='first'):
         """
@@ -410,7 +422,7 @@ class LiteModel:
         output_shape = output_details[0]['shape']  # [1, 10]
 
         start_time = time.time()
-        rtt = time.time()
+        rtt = time.time()   #time elapsed to predict each batch
 
         # simulate data arriving in batches, predict each batch
         for i in range(0, num_batches + 1):
@@ -426,11 +438,15 @@ class LiteModel:
             interpreter.allocate_tensors()
 
             X_test_batch = channel.X_test[prior_idx:idx]
-            X_test_batch = np.array(X_test_batch, dtype=np.float32)
+
+            #TODO- why lstm requires type= np.float32; esn requires type= np.float64 ?
+            if self.config.model_architecture == 'LSTM':
+                X_test_batch = np.array(X_test_batch, dtype=np.float32)
             interpreter.set_tensor(input_details[0]['index'], X_test_batch)
             interpreter.invoke()
 
             y_hat_batch = interpreter.get_tensor(output_details[0]['index'])
+            #print(y_hat_batch)
             self.aggregate_predictions(y_hat_batch, method=method)
             print(time.time()-rtt)
             rtt = time.time()
@@ -439,14 +455,8 @@ class LiteModel:
         delta_time = time.time() - start_time
         self.prediction_time = delta_time
         print(self.prediction_time)
-        #channel.y_hat = self.y_hat
+        channel.y_hat = self.y_hat
         if save:
             np.save(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy', self.y_hat)
 
         return channel
-
-    def load_predictions(self):
-        """
-            load predicitons made by TFLite model
-        """
-        self.y_hat = np.load(create_path(self.config, 'y_hat', lib='TFLite')+self.chan_id+'.npy')
