@@ -20,12 +20,12 @@ class DetectorLite:
         self.config = helpers.Config(config_path)
         self.labels_path = labels_path
         self.channel = None
-        self.mode = 'test' #[test, convert, predict, convert_predict]
+        self.mode = 'convert_predict' #[test, convert, predict, convert_predict]
         self.labels_path = labels_path
         self.results_path = results_path
         self.results = []
-        self.save_results = True
         self.chan_df = None
+        self.stats = []
 
 
         if self.labels_path:
@@ -142,19 +142,37 @@ class DetectorLite:
         return result_row
 
 
+    def save_results(self, mode='w', predictions=None, stats=True):
+        """
+        Save prediction and/or stats of conversion/prediction
+
+        :param predictions: True if predictions must be saved
+        :param stats: True if statistichs must be saved
+        """
+        filename = str(self.config.model_architecture) + '_' + str(self.config.n_layers)
+        if self.config.model_architecture == 'ESN' and self.config.serialization == True:
+            filename = filename + '_SER'
+
+        if not predictions is None:
+            filename = predictions+'_predictions_'+filename
+            result_df = pd.DataFrame(self.results)
+            result_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
+        if stats:
+            filename = 'TFLite_stats_' + filename
+            stats_df = pd.DataFrame(self.stats)
+            stats_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
+
+
     def run(self):
 
         for i, row in self.chan_df.iterrows():
             channel_name = row.chan_id
-            print(row.chan_id)
+            print('{}- {}'.format(i, row.chan_id))
+            stats = {'chan_id': row.chan_id}
 
             #create channel and load dataset
             self.channel = Channel(self.config, channel_name)
             self.channel.load_data()
-            #self.channel.y_hat = np.load(create_path(self.config, 'y_hat')+channel_name+'.npy')
-
-            # create TFLite Model
-            tfLite_model = LiteModel(self.config, self.channel)
 
             if self.mode.startswith('convert'):
                 # load TF model
@@ -163,30 +181,30 @@ class DetectorLite:
                 #print(tf_model.model.summary())
                 #tf_model.batch_predict(self.channel)
 
+                # create TFLite Model
+                tfLite_model = LiteModel(self.config, self.channel)
+
                 # convert model to TF Lite
                 tfLite_model.convert(tf_model.model)
+                stats['conversion time'] = tfLite_model.conversion_time
+                stats['size variation'] = [tf_model.size, tfLite_model.size]
                 print('Conversion to TensorFlow Lite: Done (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
 
             if self.mode.endswith('predict'):
+                # create TFLite Model
+                tfLite_model = LiteModel(self.config, self.channel)
+
                 # predict using TFLite Model
                 print('Predicting with TensorFlowLite model')
                 tfLite_model.batch_predict(self.channel)
+                stats['prediction time'] = tfLite_model.prediction_time
 
             if self.mode == 'test':
                 self.channel.y_hat = np.load(create_path(self.config, 'y_hat')+channel_name+'.npy')
 
             self.results.append(self.get_results(row))
-            #TODO da eliminare
+            self.stats.append(stats)
             break
 
         print(self.results)
-
-        if self.save_results:
-            with open('results/myFile.txt', 'a') as f:
-                if self.mode.endswith('predict'):
-                    data = 'TF_lite '
-                else:
-                    data = 'TF '
-                data = data + str(self.config.model_architecture) + str(self.config.n_layers) + ' ' + channel_name + '- '+ str(self.results) + '\n'
-                f.write(data)
-                f.close()
+        self.save_results(predictions='TFLite')

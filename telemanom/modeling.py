@@ -29,14 +29,11 @@ def get_seed(config, chan_id):
     path = create_path(config, 'models')+'seeds.log'
     #path = f'./data/{folder}/models/seeds.log'
     file1 = open(path, 'r')
-    seed = 0
 
     for row in file1.readlines():
         if row.startswith(chan_id):
             seed = int(row.strip().split(" ")[1])
             return seed
-
-    #TODO raise seed file not found!
 
 
 class Model:
@@ -82,6 +79,7 @@ class Model:
                     self.model = create_esn_model(channel, self.config, hp, seed)
                     path = create_path(self.config, 'models')+self.chan_id+'.h5'
                     self.model.load_weights(path)
+                    self.size = os.path.getsize(path)/1000
 
                     self.model._set_inputs(channel.X_test[:config.batch_size]) #TODO è giusto?
 
@@ -92,8 +90,8 @@ class Model:
                 else:
                     path = create_path(self.config, 'models')+self.chan_id + '.h5'
                     self.model = load_model(path)
-                #TODO calculate size
-                self.size = sys.getsizeof(self.model)
+                    self.size = os.path.getsize(path)/1000
+
 
             except (FileNotFoundError, OSError) as e:
                 path = os.path.join('data', self.config.use_id, 'models',
@@ -111,7 +109,6 @@ class Model:
         else:
             logger.info("Configuration file error, check execution flag")
             sys.exit("Configuration file error, check execution flag")
-
 
     def train_new(self, channel):
         """
@@ -353,8 +350,8 @@ class LiteModel:
         delta_time = time.time() - start_time
         self.conversion_time = delta_time
         print('Model converted in {}s'.format(self.conversion_time))
-        # TODO calculate size
-        self.size = sys.getsizeof(self.model)
+
+        self.size = sys.getsizeof(self.model) / 1000
 
         # save TFLite model
         if save:
