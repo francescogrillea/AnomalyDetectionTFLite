@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
 import os
-import time
-import tensorflow as tf
+import datetime
 from telemanom import helpers
 from telemanom.utility import create_path
 from telemanom.channel import Channel
@@ -20,7 +19,7 @@ class DetectorLite:
         self.config = helpers.Config(config_path)
         self.labels_path = labels_path
         self.channel = None
-        self.mode = 'convert_predict' #[test, convert, predict, convert_predict]
+        self.mode = 'convert' #[test, convert, predict, convert_predict]
         self.labels_path = labels_path
         self.results_path = results_path
         self.results = []
@@ -142,25 +141,18 @@ class DetectorLite:
         return result_row
 
 
-    def save_results(self, mode='w', predictions=None, stats=True):
+    def save_results(self, mode='w'):
         """
-        Save prediction and/or stats of conversion/prediction
+        Save stats of conversion/prediction
+        """
 
-        :param predictions: True if predictions must be saved
-        :param stats: True if statistichs must be saved
-        """
         filename = str(self.config.model_architecture) + '_' + str(self.config.n_layers)
         if self.config.model_architecture == 'ESN' and self.config.serialization == True:
             filename = filename + '_SER'
 
-        if not predictions is None:
-            filename = predictions+'_predictions_'+filename
-            result_df = pd.DataFrame(self.results)
-            result_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
-        if stats:
-            filename = 'TFLite_stats_' + filename
-            stats_df = pd.DataFrame(self.stats)
-            stats_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
+        filename = 'results_' + filename
+        stats_df = pd.DataFrame(self.stats)
+        stats_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
 
 
     def run(self):
@@ -174,37 +166,36 @@ class DetectorLite:
             self.channel = Channel(self.config, channel_name)
             self.channel.load_data()
 
+            tfLite_model = LiteModel(self.config, self.channel)
+
             if self.mode.startswith('convert'):
                 # load TF model
                 tf_model = Model(self.config, channel_name, self.channel)
                 print('Loading TensorFlow model: Done')
-                #print(tf_model.model.summary())
+                print(tf_model.model.summary())
                 #tf_model.batch_predict(self.channel)
-
-                # create TFLite Model
-                tfLite_model = LiteModel(self.config, self.channel)
+                #stats['TF Prediction Time'] = tf_model.prediction_time
 
                 # convert model to TF Lite
+                print('Convert to TensorFlow Lite')
                 tfLite_model.convert(tf_model.model)
                 stats['conversion time'] = tfLite_model.conversion_time
                 stats['size variation'] = [tf_model.size, tfLite_model.size]
                 print('Conversion to TensorFlow Lite: Done (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
 
             if self.mode.endswith('predict'):
-                # create TFLite Model
-                tfLite_model = LiteModel(self.config, self.channel)
-
                 # predict using TFLite Model
                 print('Predicting with TensorFlowLite model')
                 tfLite_model.batch_predict(self.channel)
-                stats['prediction time'] = tfLite_model.prediction_time
+                stats['TFLite Prediction Time'] = tfLite_model.prediction_time
 
             if self.mode == 'test':
-                self.channel.y_hat = np.load(create_path(self.config, 'y_hat')+channel_name+'.npy')
+                #test ops
+                break
 
-            self.results.append(self.get_results(row))
+            #self.results.append(self.get_results(row))
             self.stats.append(stats)
             break
 
-        print(self.results)
-        self.save_results(predictions='TFLite')
+        self.save_results()
+
