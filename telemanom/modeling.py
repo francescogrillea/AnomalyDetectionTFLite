@@ -9,7 +9,6 @@ import numpy as np
 import os
 import logging
 
-import telemanom.ESN
 from telemanom.utility import create_lstm_model, create_esn_model, create_path
 import random
 import time
@@ -62,6 +61,8 @@ class Model:
         self.y_hat = np.array([])
         self.model = None
         self.size = 0
+        self.prediction_time = 0
+        self.channel = channel
 
         if self.config.execution == "predict":
             try:
@@ -74,23 +75,26 @@ class Model:
                         hp = yaml.load(file, Loader=yaml.BaseLoader)
 
                 if self.config.model_architecture != "LSTM":
-                    # get seed for a specific model model
-                    seed = get_seed(self.config, self.chan_id)
-                    self.model = create_esn_model(channel, self.config, hp, seed)
-                    path = create_path(self.config, 'models')+self.chan_id+'.h5'
-                    self.model.load_weights(path)
-                    self.size = os.path.getsize(path)/1000
+                    path = create_path(self.config, 'models')+self.chan_id
+                    if os.path.isdir(path):
+                        logger.info('Load model')
+                        self.model = tf.saved_model.load(path)
+                    else:
+                        logger.info('Recreate model')
+                        # get seed for a specific model model
+                        seed = get_seed(self.config, self.chan_id)
+                        self.model = create_esn_model(channel, self.config, hp, seed)
+                        weight_path = path+'.h5'
+                        self.model.load_weights(weight_path)
 
-                    self.model._set_inputs(channel.X_test[:config.batch_size]) #TODO è giusto?
-
-                    #FATTO IO
-                    #t = tf.constant(channel.X_test)
-                    #self.model(t)
-
+                        self.model._set_inputs(channel.X_test[:config.batch_size])
+                        #to avoid E:ValueError: Model <telemanom.ESN.SimpleESN ... > cannot be saved because the input shapes have not been set. Usually, input shapes are automatically determined from calling `.fit()` or `.predict()`. To manually set the shapes, call `model.build(input_shape)`.
+                        tf.saved_model.save(self.model, path)
+                    self.size = os.path.getsize(path+'/saved_model.pb') / 1024
                 else:
-                    path = create_path(self.config, 'models')+self.chan_id + '.h5'
+                    path = create_path(self.config, 'models')+self.chan_id+'.h5'
                     self.model = load_model(path)
-                    self.size = os.path.getsize(path)/1000
+                    self.size = os.path.getsize(path) / 1024
 
 
             except (FileNotFoundError, OSError) as e:
@@ -269,8 +273,8 @@ class Model:
             raise ValueError('l_s ({}) too large for stream length {}.'
                              .format(self.config.l_s, channel.y_test.shape[0]))
 
+        n = channel.X_test.shape[0]
         start_time = time.time()
-        rtt = time.time()
         method = self.config.method
         # simulate data arriving in batches, predict each batch
         for i in range(0, num_batches + 1):
@@ -284,22 +288,22 @@ class Model:
             X_test_batch = channel.X_test[prior_idx:idx]
             y_hat_batch = self.model.predict(X_test_batch)
             self.aggregate_predictions(y_hat_batch, method=method)
-            delta_time = time.time()-rtt
-            print(delta_time)
-            rtt = time.time()
+            #progress
+            percentage = int((idx * 100)/ n)
+            sys.stdout.write('\r')
+            sys.stdout.write(str(percentage)+'%')
+            sys.stdout.flush()
 
-
+        sys.stdout.write('\n')
         delta_time = time.time() - start_time
-        print(delta_time)
+        self.prediction_time = delta_time
         self.y_hat = np.reshape(self.y_hat, (self.y_hat.size,))
 
         channel.y_hat = self.y_hat
-        #TODO-  ricordare che l'ho commentato
-        #np.save(os.path.join('data', self.run_id, 'y_hat', '{}.npy'
-        #                     .format(self.chan_id)), self.y_hat)
+        path = create_path(self.config, 'y_hat') + self.chan_id + '.npy'
+        np.save(path, self.y_hat)
 
         return channel
-
 
 
 class LiteModel:
@@ -345,18 +349,21 @@ class LiteModel:
             tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
             tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
         ]
+        #converter.allow_custom_ops = True
+        #converter.experimental_new_converter = True
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
         self.model = converter.convert()
         delta_time = time.time() - start_time
         self.conversion_time = delta_time
         print('Model converted in {}s'.format(self.conversion_time))
 
-        self.size = sys.getsizeof(self.model) / 1000
+        self.size = self.model.__sizeof__() / 1024
 
         # save TFLite model
         if save:
             with open(self.model_path, 'wb') as f:
                 f.write(self.model)
+
 
     def aggregate_predictions(self, y_hat_batch, method='first'):
         """
@@ -419,7 +426,7 @@ class LiteModel:
         output_shape = output_details[0]['shape']  # [1, 10]
 
         start_time = time.time()
-        rtt = time.time()   #time elapsed to predict each batch
+        n = channel.X_test.shape[0]
 
         # simulate data arriving in batches, predict each batch
         for i in range(0, num_batches + 1):
@@ -445,9 +452,13 @@ class LiteModel:
             y_hat_batch = interpreter.get_tensor(output_details[0]['index'])
             #print(y_hat_batch)
             self.aggregate_predictions(y_hat_batch, method=method)
-            print(time.time()-rtt)
-            rtt = time.time()
+            # progress
+            percentage = int((idx * 100) / n)
+            sys.stdout.write('\r')
+            sys.stdout.write(str(percentage) + '%')
+            sys.stdout.flush()
 
+        sys.stdout.write('\n')
         self.y_hat = np.reshape(self.y_hat, (self.y_hat.size,))
         delta_time = time.time() - start_time
         self.prediction_time = delta_time
