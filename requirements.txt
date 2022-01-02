@@ -1,0 +1,4 @@
+pip
+tensorflow
+pyyaml
+numpy
