@@ -5,14 +5,14 @@ from time import strftime
 from time import gmtime
 from concurrent.futures import ThreadPoolExecutor
 
-import telemanom.ESN
 from telemanom import helpers
 from telemanom.monitoring import MonitorResources
 from telemanom.utility import create_path
 from telemanom.channel import Channel
 from telemanom.errors import Errors
 from telemanom.modeling import Model, LiteModel
-import tensorflow as tf
+
+#TODO- add logging
 
 
 
@@ -22,7 +22,29 @@ def secondsToStr(t):
 class DetectorLite:
     def __init__(self, labels_path=None, results_path='results/', config_path='config.yaml'):
 
-        #TODO- inserire commenti
+        """
+        Top-level class for running anomaly detection over a group of channels
+        with values stored in .npy files. Also evaluates performance against a
+        set of labels if provided.
+
+        Args:
+            labels_path (str): path to .csv containing labeled anomaly ranges
+                for group of channels to be processed
+            result_path (str): directory indicating where to stick result .csv
+            config_path (str): path to config.yaml
+
+        Attributes:
+            labels_path (str): see Args
+            TF_results (list of dicts): holds dicts of results for each channel using TensorFlow model
+            TFLite_results (list of dicts): holds dicts of results for each channel using TensorFlow Lite model
+            chan_df (dataframe): holds all channel information from labels .csv
+            stats (list of dicts): holds dicts of statistics during the execution
+            mode (dict): specify the execution mode [predict using TensorFlow model, convert model from TF to TFLite, predict using TFLite model]
+            result_tracker (dict): if labels provided, holds results throughout processing for logging
+            config (obj):  Channel class object containing train/test data for X,y for a single channel
+            y_hat (arr): predicted channel values
+            result_path (str): see Args
+        """
 
         self.config = helpers.Config(config_path)
         self.labels_path = labels_path
@@ -35,9 +57,10 @@ class DetectorLite:
         self.stats = []
 
         self.mode = {}
+        self.mode['test'] = True
         self.mode['predict_TF'] = True
         self.mode['convert'] = True
-        self.mode['convert_TFLite'] = True
+        self.mode['predict_TFLite'] = True
 
 
         if self.labels_path:
@@ -85,6 +108,7 @@ class DetectorLite:
         }
 
         matched_true_seqs = []
+        tmp = label_row['anomaly_sequences']
 
         label_row['anomaly_sequences'] = eval(label_row['anomaly_sequences'])
         result_row['num_true_anoms'] += len(label_row['anomaly_sequences'])
@@ -127,11 +151,12 @@ class DetectorLite:
             if key in self.result_tracker:
                 self.result_tracker[key] += result_row[key]
 
+        label_row['anomaly_sequences'] = tmp
         return result_row
 
 
-    def get_results(self, row):
-        errors = Errors(self.channel, self.config, None)
+    def get_results(self, row, path):
+        errors = Errors(self.channel, self.config, None, path)
         errors.process_batches(self.channel)
 
         result_row = {
@@ -169,15 +194,16 @@ class DetectorLite:
             stats_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
 
         if results:
+            #save TF Lite results
             filename = base_filename + '_TFLite_results'
             tflite_results_df = pd.DataFrame(self.TFLite_results)
             tflite_results_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
 
-            """
+            #save TF results
             filename = base_filename + '_TF_results'
             tf_results_df = pd.DataFrame(self.TF_results)
             tf_results_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
-            """
+
 
 
     def run(self):
@@ -190,6 +216,10 @@ class DetectorLite:
             #create channel and load dataset
             self.channel = Channel(self.config, channel_name)
             self.channel.load_data()
+
+            if self.mode['test']:
+                if str(i) == '3':
+                    break
 
             #load TF model
             tf_model = Model(self.config, channel_name, self.channel)
@@ -207,7 +237,8 @@ class DetectorLite:
                     try:
                         #prediction on TensorFlow Model
                         tf_model.batch_predict(self.channel)
-                        #self.TF_results.append(self.get_results(row))
+                        path = create_path(self.config, 'smoothed_errors')
+                        self.TF_results.append(self.get_results(row,path))
                     finally:
                         monitor.keep_monitoring = False
                         monitor.calculate_avg()
@@ -245,7 +276,8 @@ class DetectorLite:
                         # predict using TFLite Model
                         print('Predicting with TensorFlowLite model')
                         tfLite_model.batch_predict(self.channel)
-                        self.TFLite_results.append(self.get_results(row))
+                        path = create_path(self.config, 'smoothed_errors', lib='TFLite')
+                        self.TFLite_results.append(self.get_results(row, path))
 
                     finally:
                         monitor.keep_monitoring = False
@@ -255,6 +287,6 @@ class DetectorLite:
                         stats['avg RAM used during TFLite prediction'] = monitor.ram
 
             self.stats.append(stats)
-            break
+            #break
 
         self.save_results()

@@ -8,7 +8,7 @@ logger = logging.getLogger('telemanom')
 
 
 class Errors:
-    def __init__(self, channel, config, run_id):
+    def __init__(self, channel, config, run_id, save_path):
         """
         Batch processing of errors between actual and predicted values
         for a channel.
@@ -34,6 +34,8 @@ class Errors:
             normalized (arr): prediction errors as a percentage of the range
                 of the channel values
         """
+
+        self.save_path = save_path
 
         self.config = config
         self.window_size = self.config.window_size
@@ -64,7 +66,7 @@ class Errors:
                 [np.mean(self.e_s[:self.config.l_s * 2])] * self.config.l_s
 
         #TODO- ricordare che l'ho commentata
-        #np.save(os.path.join('data', run_id, 'smoothed_errors', '{}.npy'.format(channel.id)),np.array(self.e_s))
+        np.save(self.save_path + '{}.npy'.format(channel.id),np.array(self.e_s))
 
         self.normalized = np.mean(self.e / np.ptp(channel.y_test))
         if self.config.execution != "search_p":
