@@ -54,10 +54,10 @@ class DetectorLite:
         self.TFLite_results = []
         self.TF_results = []
         self.chan_df = None
-        self.stats = []
+        self.stats = {}
 
         self.mode = {}
-        self.mode['test'] = True
+        self.mode['test'] = False
         self.mode['predict_TF'] = True
         self.mode['convert'] = True
         self.mode['predict_TFLite'] = True
@@ -190,6 +190,7 @@ class DetectorLite:
 
         if stats:
             filename = base_filename + '_stats'
+
             stats_df = pd.DataFrame(self.stats)
             stats_df.to_csv('results/{}.csv'.format(filename), mode=mode, index=False)
 
@@ -207,86 +208,130 @@ class DetectorLite:
 
 
     def run(self):
+        TIMES = 2
+
+        stats = {
+            'chan_id': None,
+            'TF Prediction Time': [],
+            'avg CPU% during TF prediction': [],
+            'avg RAM used during TF prediction': [],
+            'conversion Time': [],
+            'avg CPU% during conversion': [],
+            'avg RAM used during conversion': [],
+            'size variation': [],
+            'TFLite prediction Time': [],
+            'avg CPU% during TFLite prediction': [],
+            'avg RAM used during TFLite prediction': []
+        }
+
 
         for i, row in self.chan_df.iterrows():
+
             channel_name = row.chan_id
+            stats['chan_id'] = channel_name
             print('{}- {}'.format(i, row.chan_id))
-            stats = {'chan_id': row.chan_id}
 
-            #create channel and load dataset
-            self.channel = Channel(self.config, channel_name)
-            self.channel.load_data()
+            for times in range(TIMES):
+                print('Iteration {}/{}'.format(times, TIMES-1))
+                #create channel and load dataset
+                self.channel = Channel(self.config, channel_name)
+                self.channel.load_data()
+                #stats = {'chan_id': row.chan_id}
 
-            if self.mode['test']:
-                if str(i) == '3':
+                if self.mode['test']:
                     break
 
-            #load TF model
-            tf_model = Model(self.config, channel_name, self.channel)
+                #load TF model
+                tf_model = Model(self.config, channel_name, self.channel)
 
-            #istantiate TFLite Model
-            tfLite_model = LiteModel(self.config, self.channel)
+                #istantiate TFLite Model
+                tfLite_model = LiteModel(self.config, self.channel)
 
-            if self.mode['predict_TF']:
-                #== TensorFlow Predictions ==#
-                with ThreadPoolExecutor() as executor:
-                    #monitor resources while during prediction
-                    monitor = MonitorResources()
-                    mem_thread = executor.submit(monitor.measure_usage)
+                if self.mode['predict_TF']:
+                    #== TensorFlow Predictions ==#
+                    with ThreadPoolExecutor() as executor:
+                        #monitor resources while during prediction
+                        monitor = MonitorResources()
+                        mem_thread = executor.submit(monitor.measure_usage)
 
-                    try:
-                        #prediction on TensorFlow Model
-                        tf_model.batch_predict(self.channel)
-                        path = create_path(self.config, 'smoothed_errors')
-                        self.TF_results.append(self.get_results(row,path))
-                    finally:
-                        monitor.keep_monitoring = False
-                        monitor.calculate_avg()
-                        stats['TF Prediction Time'] = secondsToStr(tf_model.prediction_time)
-                        stats['avg CPU% during TF prediction'] = monitor.cpu
-                        stats['avg RAM used during TF prediction'] = monitor.ram
+                        try:
+                            #prediction on TensorFlow Model
+                            tf_model.batch_predict(self.channel)
+                            path = create_path(self.config, 'smoothed_errors')
+                            self.TF_results.append(self.get_results(row,path))
+                        finally:
+                            monitor.keep_monitoring = False
+                            monitor.calculate_avg()
 
+                            stats['TF Prediction Time'].append(tf_model.prediction_time)
+                            stats['avg CPU% during TF prediction'].append(monitor.cpu)
+                            stats['avg RAM used during TF prediction'].append(monitor.ram)
 
-            if self.mode['convert']:
-                #== Convert to TensorFlow Lite ==#
-                with ThreadPoolExecutor() as executor:
-                    # monitor resources while during converion
-                    monitor = MonitorResources()
-                    mem_thread = executor.submit(monitor.measure_usage)
-                    try:
-                        # convert model to TF Lite
-                        print('Convert to TensorFlow Lite')
-                        tfLite_model.convert(tf_model.model)
-                        print('Conversion completed (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
-                    finally:
-                        monitor.keep_monitoring = False
-                        monitor.calculate_avg()
-                        stats['conversion time'] = secondsToStr(tfLite_model.conversion_time)
-                        stats['avg CPU% during conversion'] = monitor.cpu
-                        stats['avg RAM used during conversion'] = monitor.ram
-                        stats['size variation'] = [tf_model.size, tfLite_model.size]
+                if self.mode['convert']:
+                    #== Convert to TensorFlow Lite ==#
+                    with ThreadPoolExecutor() as executor:
+                        # monitor resources while during converion
+                        monitor = MonitorResources()
+                        mem_thread = executor.submit(monitor.measure_usage)
+                        try:
+                            # convert model to TF Lite
+                            print('Convert to TensorFlow Lite')
+                            tfLite_model.convert(tf_model.model)
+                            print('Conversion completed (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
+                        finally:
+                            monitor.keep_monitoring = False
+                            monitor.calculate_avg()
 
-            if self.mode['predict_TFLite']:
-                #== TensorFlow Lite Predictions ==#
-                with ThreadPoolExecutor() as executor:
-                    # monitor resources while during prediction
-                    monitor = MonitorResources()
-                    mem_thread = executor.submit(monitor.measure_usage)
-                    try:
-                        # predict using TFLite Model
-                        print('Predicting with TensorFlowLite model')
-                        tfLite_model.batch_predict(self.channel)
-                        path = create_path(self.config, 'smoothed_errors', lib='TFLite')
-                        self.TFLite_results.append(self.get_results(row, path))
+                            stats['conversion Time'].append(tfLite_model.conversion_time)
+                            stats['avg CPU% during conversion'].append(monitor.cpu)
+                            stats['avg RAM used during conversion'].append(monitor.ram)
+                            stats['size variation'].append([tf_model.size, tfLite_model.size])
 
-                    finally:
-                        monitor.keep_monitoring = False
-                        monitor.calculate_avg()
-                        stats['TFLite prediction time'] = secondsToStr(tfLite_model.prediction_time)
-                        stats['avg CPU% during TFLite prediction'] = monitor.cpu
-                        stats['avg RAM used during TFLite prediction'] = monitor.ram
+                if self.mode['predict_TFLite']:
+                    #== TensorFlow Lite Predictions ==#
+                    with ThreadPoolExecutor() as executor:
+                        # monitor resources while during prediction
+                        monitor = MonitorResources()
+                        mem_thread = executor.submit(monitor.measure_usage)
+                        try:
+                            # predict using TFLite Model
+                            print('Predicting with TensorFlowLite model')
+                            tfLite_model.batch_predict(self.channel)
+                            path = create_path(self.config, 'smoothed_errors', lib='TFLite')
+                            self.TFLite_results.append(self.get_results(row, path))
 
-            self.stats.append(stats)
-            #break
+                        finally:
+                            monitor.keep_monitoring = False
+                            monitor.calculate_avg()
+
+                            stats['TFLite prediction Time'].append(tfLite_model.prediction_time)
+                            stats['avg CPU% during TFLite prediction'].append(monitor.cpu)
+                            stats['avg RAM used during TFLite prediction'].append(monitor.ram)
+
+                self.stats = stats #TODO- backtab
+            self.calculate_last_row(channel_name, TIMES)
+            #self.stats.append(last_row)
+            break
 
         self.save_results()
+
+
+
+
+    def calculate_last_row(self, chan_id, TIMES):
+
+        for key in self.stats:
+            if key == 'chan_id':
+                continue
+
+            if key == 'size variation':
+                val = [sum(self.stats[key][0]) / TIMES, sum(self.stats[key][1]) / TIMES]
+            else:
+                val = sum(self.stats[key]) / TIMES
+
+            if key.endswith('Time'):
+                val = secondsToStr(val)
+                for i in range(len(self.stats[key])):
+                    self.stats[key][i] = secondsToStr(self.stats[key][i])
+
+            self.stats[key].append(val)
