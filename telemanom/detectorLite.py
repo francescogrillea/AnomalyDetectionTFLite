@@ -4,6 +4,8 @@ import os
 from time import strftime
 from time import gmtime
 from concurrent.futures import ThreadPoolExecutor
+import statistics
+
 
 from telemanom import helpers
 from telemanom.monitoring import MonitorResources
@@ -208,7 +210,7 @@ class DetectorLite:
 
 
     def run(self):
-        TIMES = 2
+        TIMES = 5
 
         stats = {
             'chan_id': None,
@@ -218,7 +220,8 @@ class DetectorLite:
             'conversion Time': [],
             'avg CPU% during conversion': [],
             'avg RAM used during conversion': [],
-            'size variation': [],
+            'TF size': [],
+            'TFLite size': [],
             'TFLite prediction Time': [],
             'avg CPU% during TFLite prediction': [],
             'avg RAM used during TFLite prediction': []
@@ -266,6 +269,7 @@ class DetectorLite:
                             stats['TF Prediction Time'].append(tf_model.prediction_time)
                             stats['avg CPU% during TF prediction'].append(monitor.cpu)
                             stats['avg RAM used during TF prediction'].append(monitor.ram)
+                            stats['TF size'].append(tf_model.size)
 
                 if self.mode['convert']:
                     #== Convert to TensorFlow Lite ==#
@@ -285,7 +289,7 @@ class DetectorLite:
                             stats['conversion Time'].append(tfLite_model.conversion_time)
                             stats['avg CPU% during conversion'].append(monitor.cpu)
                             stats['avg RAM used during conversion'].append(monitor.ram)
-                            stats['size variation'].append([tf_model.size, tfLite_model.size])
+                            stats['TFLite size'].append(tfLite_model.size)
 
                 if self.mode['predict_TFLite']:
                     #== TensorFlow Lite Predictions ==#
@@ -309,7 +313,7 @@ class DetectorLite:
                             stats['avg RAM used during TFLite prediction'].append(monitor.ram)
 
                 self.stats = stats #TODO- backtab
-            self.calculate_last_row(channel_name, TIMES)
+            self.calculate_last_row(TIMES)
             #self.stats.append(last_row)
             break
 
@@ -318,20 +322,19 @@ class DetectorLite:
 
 
 
-    def calculate_last_row(self, chan_id, TIMES):
+    def calculate_last_row(self, TIMES):
 
         for key in self.stats:
             if key == 'chan_id':
                 continue
 
-            if key == 'size variation':
-                val = [sum(self.stats[key][0]) / TIMES, sum(self.stats[key][1]) / TIMES]
-            else:
-                val = sum(self.stats[key]) / TIMES
+            avg = statistics.mean(self.stats[key])
+            stdev = statistics.stdev(self.stats[key])
 
             if key.endswith('Time'):
-                val = secondsToStr(val)
+                avg = secondsToStr(avg)
+                stdev = secondsToStr(stdev)
                 for i in range(len(self.stats[key])):
                     self.stats[key][i] = secondsToStr(self.stats[key][i])
 
-            self.stats[key].append(val)
+            self.stats[key].append([avg, stdev])
