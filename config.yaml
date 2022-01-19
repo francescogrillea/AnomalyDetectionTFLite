@@ -1,6 +1,12 @@
 # Runtime params
 #===================================
 
+test: False
+TF_Prediction: True
+Convert: True
+TFLite_Prediction: True
+
+
 # program execution mode
 # train: trains a new models, it does not perform any prediction and no anomaly detection
 # train_and_predict: performs a complete execution of the program with training and anomaly detection
@@ -8,12 +14,12 @@
 # search_p: tries different values for p parameter, use use_id as project folder to load predictions
 # find_hp: searches for optimal values for hyperparameters for ESN and LSTM
 execution: "predict" #train, predict, train_and_predict, search_p, find_hp
-use_id: "TF/LSTM_1L"   # folder name where prior trained models have been saved
-load_hp: False # if true, during training, load the optimal values of the hyperparameters using hp_research_id folder
+use_id: "TF/ESN_1L"   # folder name where prior trained models have been saved
+load_hp: True # if true, during training, load the optimal values of the hyperparameters using hp_research_id folder
 model_architecture: "LSTM" # neural network architecture LSTM, ESN
 name: "" # project name folder
 method: "mean" # indicates how to aggregate for a timestep - "first" or "mean"
-hp_research_id: "" # folder of a hyperparameters search
+hp_research_id: "lstm 1l" # folder of a hyperparameters search
 
 save_graphs: True # if True saves the graphs for loss and validation loss
 
