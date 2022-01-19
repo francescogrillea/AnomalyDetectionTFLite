@@ -59,10 +59,10 @@ class DetectorLite:
         self.stats = {}
 
         self.mode = {}
-        self.mode['test'] = False
-        self.mode['predict_TF'] = True
-        self.mode['convert'] = True
-        self.mode['predict_TFLite'] = True
+        self.mode['test'] = self.config.test
+        self.mode['predict_TF'] = self.config.TF_Prediction
+        self.mode['convert'] = self.config.Convert
+        self.mode['predict_TFLite'] = self.config.TFLite_Prediction
 
 
         if self.labels_path:
@@ -210,7 +210,7 @@ class DetectorLite:
 
 
     def run(self):
-        TIMES = 5
+        TIMES = 2
 
         stats = {
             'chan_id': None,
@@ -224,7 +224,7 @@ class DetectorLite:
             'TFLite size': [],
             'TFLite prediction Time': [],
             'avg CPU% during TFLite prediction': [],
-            'avg RAM used during TFLite prediction': []
+            'avg RAM used during TFLite prediction': [],
         }
 
 
@@ -312,9 +312,9 @@ class DetectorLite:
                             stats['avg CPU% during TFLite prediction'].append(monitor.cpu)
                             stats['avg RAM used during TFLite prediction'].append(monitor.ram)
 
+
                 self.stats = stats #TODO- backtab
             self.calculate_last_row(TIMES)
-            #self.stats.append(last_row)
             break
 
         self.save_results()
@@ -328,7 +328,11 @@ class DetectorLite:
             if key == 'chan_id':
                 continue
 
-            avg = statistics.mean(self.stats[key])
+            try:
+                avg = statistics.mean(self.stats[key])
+            except(ZeroDivisionError):
+                avg = 0
+
             stdev = statistics.stdev(self.stats[key])
 
             if key.endswith('Time'):

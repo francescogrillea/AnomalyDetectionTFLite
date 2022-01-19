@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import logging
-from sklearn.model_selection import train_test_split
+#from sklearn.model_selection import train_test_split
 
 #TODO- import logging
 logger = logging.getLogger('telemanom')
@@ -72,7 +72,9 @@ class Channel:
 
 
         # we create train and validation set
-
+        self.X_valid = []
+        self.y_valid = []
+        """
         if self.config.execution == "find_hp":
             self.X_train, self.X_valid, self.y_train, self.y_valid = train_test_split(self.X_train,
                                                                                   self.y_train,
@@ -82,6 +84,8 @@ class Channel:
             self.X_train, self.X_valid, self.y_train, self.y_valid = train_test_split(self.X_train,
                                                                                       self.y_train,
                                                                                       test_size=self.config.validation_split)
+        """
+
     def load_data(self):
         """
         Load train and test data from local.

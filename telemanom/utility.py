@@ -1,9 +1,9 @@
-from tensorflow.keras import Sequential
+#from tensorflow.keras import Sequential
 import tensorflow as tf
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+#from tensorflow.keras.layers import LSTM, Dense, Dropout
 from telemanom.ESN import SimpleESN
 
-
+"""
 def create_lstm_model(channel,config, hp):
     model = Sequential()
     if len(hp) == 0:
@@ -48,6 +48,7 @@ def create_lstm_model(channel,config, hp):
                       optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     return model
+"""
 
 def create_esn_model(channel,config, hp, seed):
     if len(hp) == 0:
@@ -71,9 +72,9 @@ def create_esn_model(channel,config, hp, seed):
                           )
 
         model.build(input_shape=(channel.X_train.shape[0], channel.X_train.shape[1], channel.X_train.shape[2]))
+        #model.build(input_shape=(None, None, channel.X_train.shape[2]))
         model.compile(loss=config.loss_metric,
                   optimizer=tf.keras.optimizers.Adam(learning_rate=float(hp["learning_rate"])))
-
     return model
 
 
