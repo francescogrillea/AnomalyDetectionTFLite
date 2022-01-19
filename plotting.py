@@ -3,9 +3,10 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from telemanom.helpers import Config
 # width of the bars
 barWidth = 0.3
+save_plots = Config('config.yaml').save_graphs
 
 
 HEADER = ['chan_id',
@@ -67,8 +68,10 @@ def plot_CPU_usage():
     plt.ylabel(y_label)
     plt.legend()
     plt.title('CPU Usage')
-    plt.savefig('results/cpu.png')
+    if save_plots:
+        plt.savefig('results/cpu.png')
     plt.show()
+    plt.clf()
 
 def plot_RAM_usage():
     avg_bar1 = []
@@ -110,8 +113,10 @@ def plot_RAM_usage():
     plt.ylabel(y_label)
     plt.legend()
     plt.title('RAM Usage')
-    plt.savefig('results/ram.png')
+    if save_plots:
+        plt.savefig('results/ram.png')
     plt.show()
+    plt.clf()
 
 def plot_size_comparison():
     avg_bar1 = []
@@ -145,8 +150,10 @@ def plot_size_comparison():
     plt.legend()
 
     plt.title('Model Size Comparison')
-    plt.savefig('results/size.png')
+    if save_plots:
+        plt.savefig('results/size.png')
     plt.show()
+    plt.clf()
 
 def plot_time_comparison():
     avg_bar1 = []
@@ -180,8 +187,10 @@ def plot_time_comparison():
     plt.legend()
 
     plt.title('Execution Time Comparison')
-    plt.savefig('results/time.png')
+    if save_plots:
+        plt.savefig('results/time.png')
     plt.show()
+    plt.clf()
 
 
 results = {}
