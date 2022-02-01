@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
 import os
+import sys
 from time import strftime
 from time import gmtime
 from concurrent.futures import ThreadPoolExecutor
 import statistics
+
 
 
 from telemanom import helpers
@@ -13,6 +15,8 @@ from telemanom.utility import create_path
 from telemanom.channel import Channel
 from telemanom.errors import Errors
 from telemanom.modeling import Model, LiteModel
+
+import tensorflow as tf
 
 #TODO- add logging
 
@@ -47,6 +51,12 @@ class DetectorLite:
             y_hat (arr): predicted channel values
             result_path (str): see Args
         """
+
+        print('Python v{}'.format(sys.version))
+        print('TensorFlow v{}'.format(tf.__version__))
+        print('GPU Support: {}'.format(tf.test.is_built_with_gpu_support()))
+        print(tf.config.list_physical_devices())
+
 
         self.config = helpers.Config(config_path)
         self.labels_path = labels_path
@@ -83,7 +93,7 @@ class DetectorLite:
         #custom configuration values
         self.tfModel_path = create_path(self.config, 'models')
         self.tfLiteModel_path = create_path(self.config, 'models', lib='TFLite')
-        print(self.config.model_architecture, self.config.n_layers, self.config.hp_research_id)
+        print('{} - {} layer'.format(self.config.model_architecture, self.config.n_layers))
 
 
     def evaluate_sequences(self, errors, label_row):
@@ -210,12 +220,12 @@ class DetectorLite:
 
 
     def run(self):
-        TIMES = 2
+        TIMES = 5
+        device = self.config.device
 
         stats = {
             'chan_id': None,
             'TF Prediction Time': [],
-            'avg CPU% during TF prediction': [],
             'avg RAM used during TF prediction': [],
             'conversion Time': [],
             'avg CPU% during conversion': [],
@@ -223,29 +233,34 @@ class DetectorLite:
             'TF size': [],
             'TFLite size': [],
             'TFLite prediction Time': [],
-            'avg CPU% during TFLite prediction': [],
             'avg RAM used during TFLite prediction': [],
         }
 
+        if device == 'windows':
+            stats['avg CPU% during TF prediction'] = []
+            stats['avg CPU% during TFLite prediction'] = []
+        elif device == 'jetson':
+            stats['avg GPU% during TF prediction'] = []
+            stats['avg GPU% during TFLite prediction'] = []
 
         for i, row in self.chan_df.iterrows():
 
             channel_name = row.chan_id
             stats['chan_id'] = channel_name
-            print('{}- {}'.format(i, row.chan_id))
 
             for times in range(TIMES):
-                print('Iteration {}/{}'.format(times, TIMES-1))
+                print('Iteration {}/{} on {}'.format(times, TIMES-1, row.chan_id))
                 #create channel and load dataset
                 self.channel = Channel(self.config, channel_name)
                 self.channel.load_data()
-                #stats = {'chan_id': row.chan_id}
 
                 if self.mode['test']:
-                    break
+                    if times > 0:
+                        break
 
                 #load TF model
                 tf_model = Model(self.config, channel_name, self.channel)
+                print(tf_model.model.summary())
 
                 #istantiate TFLite Model
                 tfLite_model = LiteModel(self.config, self.channel)
@@ -254,20 +269,25 @@ class DetectorLite:
                     #== TensorFlow Predictions ==#
                     with ThreadPoolExecutor() as executor:
                         #monitor resources while during prediction
-                        monitor = MonitorResources()
+                        monitor = MonitorResources(device)
                         mem_thread = executor.submit(monitor.measure_usage)
 
                         try:
                             #prediction on TensorFlow Model
+                            print('Predicting with TensorFlow model')
                             tf_model.batch_predict(self.channel)
+                            print('Time elapsed: {}'.format(tf_model.prediction_time))
                             path = create_path(self.config, 'smoothed_errors')
                             self.TF_results.append(self.get_results(row,path))
                         finally:
                             monitor.keep_monitoring = False
-                            monitor.calculate_avg()
+                            #monitor.calculate_avg()
 
                             stats['TF Prediction Time'].append(tf_model.prediction_time)
-                            stats['avg CPU% during TF prediction'].append(monitor.cpu)
+                            if self.config.device == 'windows':
+                                stats['avg CPU% during TF prediction'].append(monitor.cpu)
+                            if self.config.device == 'jetson':
+                                stats['avg GPU% during TF prediction'].append(monitor.gpu)
                             stats['avg RAM used during TF prediction'].append(monitor.ram)
                             stats['TF size'].append(tf_model.size)
 
@@ -275,16 +295,17 @@ class DetectorLite:
                     #== Convert to TensorFlow Lite ==#
                     with ThreadPoolExecutor() as executor:
                         # monitor resources while during converion
-                        monitor = MonitorResources()
+                        monitor = MonitorResources(device)
                         mem_thread = executor.submit(monitor.measure_usage)
                         try:
                             # convert model to TF Lite
                             print('Convert to TensorFlow Lite')
                             tfLite_model.convert(tf_model.model)
+                            print('Time elapsed: {}'.format(tfLite_model.conversion_time))
                             print('Conversion completed (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
                         finally:
                             monitor.keep_monitoring = False
-                            monitor.calculate_avg()
+                            #monitor.calculate_avg()
 
                             stats['conversion Time'].append(tfLite_model.conversion_time)
                             stats['avg CPU% during conversion'].append(monitor.cpu)
@@ -295,18 +316,19 @@ class DetectorLite:
                     #== TensorFlow Lite Predictions ==#
                     with ThreadPoolExecutor() as executor:
                         # monitor resources while during prediction
-                        monitor = MonitorResources()
+                        monitor = MonitorResources(device)
                         mem_thread = executor.submit(monitor.measure_usage)
                         try:
                             # predict using TFLite Model
                             print('Predicting with TensorFlowLite model')
                             tfLite_model.batch_predict(self.channel)
+                            print('Time elapsed: {}'.format(tfLite_model.prediction_time))
                             path = create_path(self.config, 'smoothed_errors', lib='TFLite')
                             self.TFLite_results.append(self.get_results(row, path))
 
                         finally:
                             monitor.keep_monitoring = False
-                            monitor.calculate_avg()
+                            #monitor.calculate_avg()
 
                             stats['TFLite prediction Time'].append(tfLite_model.prediction_time)
                             stats['avg CPU% during TFLite prediction'].append(monitor.cpu)
@@ -314,15 +336,15 @@ class DetectorLite:
 
 
                 self.stats = stats #TODO- backtab
-            self.calculate_last_row(TIMES)
+            self.calculate_last_row()
             break
 
-        self.save_results()
+        self.save_results(stats=False)
 
 
 
 
-    def calculate_last_row(self, TIMES):
+    def calculate_last_row(self):
 
         for key in self.stats:
             if key == 'chan_id':
@@ -330,10 +352,15 @@ class DetectorLite:
 
             try:
                 avg = statistics.mean(self.stats[key])
+                stdev = statistics.stdev(self.stats[key])
             except(ZeroDivisionError):
                 avg = 0
+                stdev = 0
+            except(statistics.StatisticsError):
+                print('Not enough values to calculate avg or stdev for {}. Setting to 0'.format(key))
+                avg = 0
+                stdev = 0
 
-            stdev = statistics.stdev(self.stats[key])
 
             if key.endswith('Time'):
                 avg = secondsToStr(avg)
