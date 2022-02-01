@@ -3,9 +3,10 @@
 
 test: False
 TF_Prediction: True
-Convert: True
-TFLite_Prediction: True
+Convert: False
+TFLite_Prediction: False
 
+device: "windows" #windows, jetson, imx8
 
 # program execution mode
 # train: trains a new models, it does not perform any prediction and no anomaly detection
@@ -19,7 +20,7 @@ load_hp: True # if true, during training, load the optimal values of the hyperpa
 model_architecture: "LSTM" # neural network architecture LSTM, ESN
 name: "" # project name folder
 method: "mean" # indicates how to aggregate for a timestep - "first" or "mean"
-hp_research_id: "lstm 1l" # folder of a hyperparameters search
+hp_research_id: "LSTM_1L" # folder of a hyperparameters search
 
 save_graphs: True # if True saves the graphs for loss and validation loss
 
