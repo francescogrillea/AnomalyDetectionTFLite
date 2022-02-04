@@ -222,26 +222,7 @@ class DetectorLite:
     def run(self):
         TIMES = 5
         device = self.config.device
-
-        stats = {
-            'chan_id': None,
-            'TF Prediction Time': [],
-            'avg RAM used during TF prediction': [],
-            'conversion Time': [],
-            'avg CPU% during conversion': [],
-            'avg RAM used during conversion': [],
-            'TF size': [],
-            'TFLite size': [],
-            'TFLite prediction Time': [],
-            'avg RAM used during TFLite prediction': [],
-        }
-
-        if device == 'windows':
-            stats['avg CPU% during TF prediction'] = []
-            stats['avg CPU% during TFLite prediction'] = []
-        elif device == 'jetson':
-            stats['avg GPU% during TF prediction'] = []
-            stats['avg GPU% during TFLite prediction'] = []
+        stats = self.init_stats(device)
 
         for i, row in self.chan_df.iterrows():
 
@@ -281,7 +262,7 @@ class DetectorLite:
                             self.TF_results.append(self.get_results(row,path))
                         finally:
                             monitor.keep_monitoring = False
-                            #monitor.calculate_avg()
+                            monitor.calculate_avg()
 
                             stats['TF Prediction Time'].append(tf_model.prediction_time)
                             if self.config.device == 'windows':
@@ -289,7 +270,6 @@ class DetectorLite:
                             if self.config.device == 'jetson':
                                 stats['avg GPU% during TF prediction'].append(monitor.gpu)
                             stats['avg RAM used during TF prediction'].append(monitor.ram)
-                            stats['TF size'].append(tf_model.size)
 
                 if self.mode['convert']:
                     #== Convert to TensorFlow Lite ==#
@@ -305,11 +285,12 @@ class DetectorLite:
                             print('Conversion completed (from {}Kb to {}Kb)'.format(tf_model.size, tfLite_model.size))
                         finally:
                             monitor.keep_monitoring = False
-                            #monitor.calculate_avg()
+                            monitor.calculate_avg()
 
                             stats['conversion Time'].append(tfLite_model.conversion_time)
                             stats['avg CPU% during conversion'].append(monitor.cpu)
                             stats['avg RAM used during conversion'].append(monitor.ram)
+                            stats['TF size'].append(tf_model.size)
                             stats['TFLite size'].append(tfLite_model.size)
 
                 if self.mode['predict_TFLite']:
@@ -328,7 +309,7 @@ class DetectorLite:
 
                         finally:
                             monitor.keep_monitoring = False
-                            #monitor.calculate_avg()
+                            monitor.calculate_avg()
 
                             stats['TFLite prediction Time'].append(tfLite_model.prediction_time)
                             stats['avg CPU% during TFLite prediction'].append(monitor.cpu)
@@ -339,7 +320,7 @@ class DetectorLite:
             self.calculate_last_row()
             break
 
-        self.save_results(stats=False)
+        self.save_results()
 
 
 
@@ -349,7 +330,7 @@ class DetectorLite:
         for key in self.stats:
             if key == 'chan_id':
                 continue
-
+            #print('{}--> {}'.format(key,self.stats[key]))
             try:
                 avg = statistics.mean(self.stats[key])
                 stdev = statistics.stdev(self.stats[key])
@@ -369,3 +350,35 @@ class DetectorLite:
                     self.stats[key][i] = secondsToStr(self.stats[key][i])
 
             self.stats[key].append([avg, stdev])
+
+    def init_stats(self, device):
+        stats = {
+            'chan_id': None,
+        }
+
+        if self.mode['predict_TF']:
+            stats['TF Prediction Time'] = []
+            stats['avg RAM used during TF prediction'] = []
+            if device == 'windows':
+                stats['avg CPU% during TF prediction'] = []
+            elif device == 'jetson':
+                stats['avg GPU% during TF prediction'] = []
+
+
+        if self.mode['convert']:
+            stats['conversion Time'] = []
+            stats['avg CPU% during conversion'] = []
+            stats['avg RAM used during conversion'] = []
+            stats['TF size'] = []
+            stats['TFLite size'] = []
+
+        if self.mode['predict_TFLite']:
+            stats['TFLite prediction Time'] = []
+            stats['avg RAM used during TFLite prediction'] = []
+            if device == 'windows':
+                stats['avg CPU% during TFLite prediction'] = []
+            elif device == 'jetson':
+                stats['avg GPU% during TFLite prediction'] = []
+
+        print(stats)
+        return stats
