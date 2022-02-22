@@ -14,3 +14,4 @@ for i in $(seq 1 $TIMES); do
 done
 
 python merge_results.py results/
+rm results/*_it*
