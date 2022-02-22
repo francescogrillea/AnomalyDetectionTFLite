@@ -3,37 +3,41 @@ from time import gmtime
 import os
 import pandas as pd
 import statistics
+import sys
 
-CSV_PATH = r"C:\Users\grill\OneDrive - University of Pisa\Anomaly Detection su JetsonNano\Risultati Sperimentali\JetsonNano\CPU\ESN 2\\"
-
+CSV_PATH = sys.argv[1]
 
 
 def merge_stats(filename):
     merged = {}
+    architectures = list(results.keys())
 
-    for key in results['ESN_2'].keys():
-        if key == 'chan_id':
-            continue
+    for key in results[architectures[0]].keys():
         col = []
         for architecture in results:
             for value in results[architecture][key]:
+                print(architecture, key, value)
                 val = value
+                print(type(val))
                 if 'Time' in key and ':' in str(val):
                     vals = val.split(':')
                     val = 60*int(vals[1]) + int(vals[2])
 
                 col.append(val)
-        #calculate avg and stddev
-        avg = round(statistics.mean(col), 2)
-        stdev = round(statistics.stdev(col), 2)
-        if 'Time' in key:
-            avg = strftime("%H:%M:%S", gmtime(avg))
-            stdev = strftime("%H:%M:%S", gmtime(stdev))
-            #trasforma in 00:00:00
-            for t in range(len(col)):
-                col[t] = strftime("%H:%M:%S", gmtime(col[t]))
+        if key == 'chan_id':
+            col.append(col[0])
+        else:
+            #calculate avg and stddev
+            avg = round(statistics.mean(col), 2)
+            stdev = round(statistics.stdev(col), 2)
+            if 'Time' in key:
+                avg = strftime("%H:%M:%S", gmtime(avg))
+                stdev = strftime("%H:%M:%S", gmtime(stdev))
+                #trasforma in 00:00:00
+                for t in range(len(col)):
+                    col[t] = strftime("%H:%M:%S", gmtime(col[t]))
 
-        col.append([avg, stdev])
+            col.append([avg, stdev])
         merged[key] = col
 
 
@@ -46,11 +50,10 @@ def merge_stats(filename):
 results = {}
 #read .csv files
 for filename in os.listdir(CSV_PATH):
-    if filename.endswith('stats.csv'):
+    if 'stats' in filename:
         print(filename)
-        architecture = filename[:-10]
+        architecture = filename[:-4]
         results[architecture] = pd.read_csv(CSV_PATH + filename)
 
-#print(results['LSTM_1'])
 
-results = merge_stats('merged_stats')
+results = merge_stats(list(results.keys())[0][:-4])
