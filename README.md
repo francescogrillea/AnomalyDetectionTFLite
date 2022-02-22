@@ -10,11 +10,13 @@ Neural Networks for anomaly detection on timeseries using TensorFlow and TensorF
 ### Jetson Nano
 
 ##### CPU-based
-`pip install tensorflow -f https://tf.kmtea.eu/whl/stable.html`
+`pip install tensorflow -f https://tf.kmtea.eu/whl/stable.html` \
+`pip install -r requirements`
 
 ##### GPU-based
 `sudo pip3 install -U h5py==3.1.0` \
-`sudo pip3 install --pre --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v45 tensorflow`
+`sudo pip3 install --pre --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v45 tensorflow` \ 
+`sudo pip3 install -r requirements`
 
 
 ### Raspberry Pi3 (Model B)
