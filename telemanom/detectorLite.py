@@ -320,8 +320,8 @@ class DetectorLite:
                         stats['avg RAM used during TFLite prediction'].append(monitor.ram)
 
 
-                self.stats = stats #TODO- backtab
-                #self.calculate_last_row()
+            self.stats = stats
+            #self.calculate_last_row()
             break
 
         self.save_results()
