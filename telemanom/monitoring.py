@@ -4,7 +4,7 @@ import psutil
 import subprocess
 
 class MonitorResources():
-    def __init__(self, device):
+    def __init__(self, hardware):
         """
         Top-Level class to monitor cpu, ram and gpu usage
 
@@ -18,9 +18,14 @@ class MonitorResources():
         self.gpu = []
         self.cpu = []
         self.ram = []
-        self.device = device
+        self.hardware = hardware
+        self.sync = False
 
     def calculate_avg(self):
+
+        while not self.sync:
+            sleep(0.01)
+
         if len(self.cpu) > 0:
             self.cpu = round(sum(self.cpu) / len(self.cpu),2)
         if len(self.gpu) > 0:
@@ -31,7 +36,7 @@ class MonitorResources():
         """
         High level function executed from each tread
         """
-        if self.device == 'windows':
+        if self.hardware == 'cpu':
             self.process = psutil.Process(os.getpid())
             while self.keep_monitoring:
                 cpu = round(self.process.cpu_percent()/ psutil.cpu_count(), 3)
@@ -40,7 +45,7 @@ class MonitorResources():
                 self.ram.append(ram)
                 sleep(0.1)
 
-        elif self.device == 'jetson':
+        elif self.hardware == 'gpu':
             process = subprocess.Popen('/usr/bin/tegrastats', stdout=subprocess.PIPE, encoding='UTF8')
             while self.keep_monitoring:
                 sleep(0.1)
@@ -56,5 +61,4 @@ class MonitorResources():
                 if gpu > 0:
                     self.gpu.append(gpu)
 
-        self.calculate_avg()
-
+        self.sync = True
