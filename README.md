@@ -44,22 +44,19 @@ CUDNN v8.0.0
 # Raspberry Pi3 (Model B)
 
 ## Env
-Raspbian 9 \
-Python v3.7.4 \
-Pip v22.0.3
+Architecture aarch64 \
+OS Raspbian 11 (bullseye) \
+Python v3.9.2 \
+Pip v20.3.4
 
 
-## Install - Method 1
-install h5py package \
-`$ sudo apt-get install libhdf5-dev`
+## Install
+CPU Version [TF v2.7.0] \
+`pip install tensorflow -f https://tf.kmtea.eu/whl/stable.html` \
+or if needed a specify TF version \
+`pip install tensorflow==2.7.0 -f https://tf.kmtea.eu/whl/stable.html` \
+`sudo pip install -r requirements`
 
-Install TensorFlow v2.4.0
+## Known Problems
+* ESN 2L: TFLite prediction killed at 0% cause 1.05GB of swap memory is not enough (Jetson has 2G of swap memory)
 
-`$ pip3 install https://github.com/lhelontra/tensorflow-on-arm/releases/download/v2.4.0/tensorflow-2.4.0-cp37-none-linux_armv7l.whl`
-
-### Problems
-TF Prediction: Ok \
-Conversion: Segmentation Fault \
-TFLite Prediction: cannot load .tflite model
-
-## Install - Method 2
